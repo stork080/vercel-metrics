@@ -82,30 +82,23 @@ async def preflight():
     })
 
 
+@app.post("/")
 @app.post("/api/metrics")
 def metrics(q: Query):
     result = {}
     for region in q.regions:
         rows = [r for r in TELEMETRY if r["region"] == region]
         if not rows:
-            result[region] = {
-                "avg_latency": 0,
-                "p95_latency": 0,
-                "avg_uptime": 0,
-                "breaches": 0,
-            }
+            result[region] = {"avg_latency": 0, "p95_latency": 0, "avg_uptime": 0, "breaches": 0}
             continue
-
         latencies = [r["latency_ms"] for r in rows]
         uptimes = [r["uptime_pct"] for r in rows]
-
         result[region] = {
             "avg_latency": round(float(np.mean(latencies)), 2),
             "p95_latency": round(float(np.percentile(latencies, 95)), 2),
             "avg_uptime": round(float(np.mean(uptimes)), 3),
             "breaches": int(sum(1 for l in latencies if l > q.threshold_ms)),
         }
-
     return result
 
 
