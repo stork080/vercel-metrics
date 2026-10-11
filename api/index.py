@@ -9,7 +9,15 @@ import numpy as np
 
 app = FastAPI()
 
-# --- CORS middleware ---
+# Explicit CORS headers — used on every response
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Expose-Headers": "Access-Control-Allow-Origin",
+}
+
+# --- CORSMiddleware (handles standard cases) ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,14 +26,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Manual CORS fallback ---
+# --- Hard fallback: force CORS headers onto every response ---
 @app.middleware("http")
-async def add_cors_header(request: Request, call_next):
+async def force_cors(request: Request, call_next):
     response = await call_next(request)
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "*"
+    for k, v in CORS_HEADERS.items():
+        response.headers[k] = v
     return response
+
 
 # --- TELEMETRY DATA ---
 TELEMETRY = [
@@ -73,18 +81,7 @@ class Query(BaseModel):
     threshold_ms: float = 180
 
 
-@app.options("/api/metrics")
-async def preflight():
-    return JSONResponse(content={}, headers={
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "*",
-    })
-
-
-@app.post("/")
-@app.post("/api/metrics")
-def metrics(q: Query):
+def compute_metrics(q: Query):
     result = {}
     for region in q.regions:
         rows = [r for r in TELEMETRY if r["region"] == region]
@@ -102,6 +99,28 @@ def metrics(q: Query):
     return result
 
 
+# --- Explicit OPTIONS handlers with the CORS headers ---
+@app.options("/")
+async def options_root():
+    return JSONResponse(content={}, headers=CORS_HEADERS)
+
+
+@app.options("/api/metrics")
+async def options_metrics():
+    return JSONResponse(content={}, headers=CORS_HEADERS)
+
+
+# --- POST works at both paths ---
+@app.post("/")
+def metrics_root(q: Query):
+    return JSONResponse(content=compute_metrics(q), headers=CORS_HEADERS)
+
+
+@app.post("/api/metrics")
+def metrics_api(q: Query):
+    return JSONResponse(content=compute_metrics(q), headers=CORS_HEADERS)
+
+
 @app.get("/")
 def root():
-    return {"status": "ok"}
+    return JSONResponse(content={"status": "ok"}, headers=CORS_HEADERS)
